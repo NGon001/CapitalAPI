@@ -1,0 +1,17 @@
+﻿  Account.hpp
+  main.cpp
+C:\Users\PixelTech\Documents\GitHub\Trade\Trade\Tools.hpp(50,28): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
+  (compiling source file 'main.cpp')
+  
+C:\Users\PixelTech\Documents\GitHub\Trade\Trade\Tools.hpp(52,21): warning C4244: 'return': conversion from '_Ret' to 'float', possible loss of data
+C:\Users\PixelTech\Documents\GitHub\Trade\Trade\Tools.hpp(52,21): warning C4244:         with
+C:\Users\PixelTech\Documents\GitHub\Trade\Trade\Tools.hpp(52,21): warning C4244:         [
+C:\Users\PixelTech\Documents\GitHub\Trade\Trade\Tools.hpp(52,21): warning C4244:             _Ret=double
+C:\Users\PixelTech\Documents\GitHub\Trade\Trade\Tools.hpp(52,21): warning C4244:         ]
+  (compiling source file 'main.cpp')
+  
+C:\Users\PixelTech\Documents\GitHub\Trade\Trade\main.cpp(42,75): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data
+C:\Users\PixelTech\Documents\GitHub\Trade\Trade\main.cpp(43,75): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data
+  Generating Code...
+LINK : warning LNK4098: defaultlib 'LIBCMTD' conflicts with use of other libs; use /NODEFAULTLIB:library
+  Trade.vcxproj -> C:\Users\PixelTech\Documents\GitHub\Trade\x64\Debug\Trade.exe
