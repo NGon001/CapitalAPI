@@ -1,2 +1,0 @@
-C:\Users\PixelTech\source\repos\Trade\Trade\x64\Debug\Trade.exe
-C:\Users\PixelTech\Documents\GitHub\Trade\Trade\x64\Debug\Trade.exe
