@@ -3,19 +3,16 @@
 API api;
 Tool tools;
 
-void BotStart()
+void Example()
 {
-    double CurrentSell = 0;
-    double CurrentBuy = 0;
-
-    while (true)
-    {
         //START
         //check is session created and recreated every 5 min, because of api req
-        std::time_t currenttime_t = tools.stringToTimeT(tools.nowtime());
-        tools.nowtime();
-        if (!api.sessioncreated) //create session
-        {
+         // get current time
+        auto now = std::chrono::system_clock::now();
+        std::time_t currenttime_t = std::chrono::system_clock::to_time_t(now);
+
+
+        if (!api.sessioncreated) {
             if (!api.CreateSession()) {
                 std::cerr << "Session creation failed. Exiting." << std::endl;
                 return;
@@ -23,9 +20,9 @@ void BotStart()
             api.sessioncreatetime = currenttime_t;
             api.sessioncreated = true;
         }
+
         auto differencetime = tools.CalculateTimeDifference(currenttime_t, api.sessioncreatetime);
-        if (differencetime >= 300) //logout session
-        {
+        if (differencetime >= 300) { // timer for session recreation
             if (!api.logoutSession()) {
                 std::cerr << "Session logout failed. Exiting." << std::endl;
                 return;
@@ -35,21 +32,26 @@ void BotStart()
         //END
         if (api.sessioncreated)
         {
-            //code here
-            api.fetchPrice(CurrentSell,CurrentBuy);
-            std::cout << "CurrentSell: " << CurrentSell << " CurrentBuy: " << CurrentBuy  << std::endl;
-            std::cout << "Procent dif: " << tools.ProcentDifferenceCalculate(CurrentSell, CurrentBuy) << std::endl;
-            std::cout << "Procent Add Test: " << tools.ProcentageAddOrSub(CurrentBuy, 1, "+") << std::endl;
-            std::cout << "Procent Sub Test: " << tools.ProcentageAddOrSub(CurrentBuy,1,"-") << std::endl;
+            std::vector<API::MarketData> allmarkets;
+            api.GetEpics(allmarkets); // get all avalible markets
+            for (auto market : allmarkets) // access all elements in this market array
+            {
+                //code here
+                double CurrentSell = 0;
+                double CurrentBuy = 0;
+                double minDealSizeOut = 0;
+                api.fetchPrice(CurrentSell, CurrentBuy, minDealSizeOut, market.epic); // get current buy, sell pricess and minimum size for buy
+                std::cout <<"Epic: " << market.epic << "CurrentSell: " << CurrentSell << " CurrentBuy: " << CurrentBuy << " minDealSizeOut: " << minDealSizeOut << std::endl;
+
+            }
         }
         std::this_thread::sleep_for(std::chrono::seconds(3));
-    }
 }
 
 int main()
 {
     ui.printLogo();
-    BotStart();
+    Example();
 
     return 0;
 }
