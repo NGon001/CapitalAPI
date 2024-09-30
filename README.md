@@ -3,13 +3,6 @@
 
 CapitalAPI is a C++ project that integrates with the Capital.com API to handle session creation, manage trading activities, and retrieve market data.
 
-
-## Screenshots
-
-![Screenshot_20](https://github.com/user-attachments/assets/ddd2839f-96f0-48c3-8af3-f062818b86d9)
-
-
-
 ## Usage/Examples
 
 General Information:
