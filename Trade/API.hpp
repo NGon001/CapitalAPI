@@ -795,6 +795,10 @@ public:
         double profitLoss;
         double available;
 
+        // Default constructor
+        Balance()
+            : balance(0), available(0) {}
+
         Balance(double bal, double dep, double pLoss, double avail)
             : balance(bal), deposit(dep), profitLoss(pLoss), available(avail) {}
     };
@@ -808,6 +812,10 @@ public:
     Balance balance;  // Member of Account
     std::string currency;
     std::string symbol;
+
+    // Default constructor
+    Account()
+        : accountId(""), symbol("") {}
 
     // Constructor to initialize all members including the nested Balance class
     Account(const std::string& id, const std::string& name, const std::string& stat, const std::string& type, bool pref,
@@ -881,6 +889,49 @@ public:
     }
 };
     
+    class SessionDetail {
+    public:
+        std::string clientId;
+        std::string accountId;
+        int timezoneOffset;   // Assuming this is an integer
+        std::string locale;
+        std::string currency;
+        std::string streamEndpoint;
+
+        // Default constructor
+        SessionDetail()
+            : clientId(""), streamEndpoint("") {}
+
+        // Constructor to initialize all members
+        SessionDetail(const std::string& clientId, const std::string& accountId,
+            int timezoneOffset, const std::string& locale,
+            const std::string& currency, const std::string& streamEndpoint)
+            : clientId(clientId), accountId(accountId),
+            timezoneOffset(timezoneOffset), locale(locale),
+            currency(currency), streamEndpoint(streamEndpoint) {}
+
+        // Static function to parse JSON response into a SessionDetail object
+        static bool ParseFromJson(const std::string& jsonResponse, SessionDetail& sessionDetail) {
+            try {
+                // Parse the JSON response
+                nlohmann::json jsonResponseParsed = nlohmann::json::parse(jsonResponse);
+
+                // Extract fields
+                sessionDetail.clientId = jsonResponseParsed.at("clientId").get<std::string>();
+                sessionDetail.accountId = jsonResponseParsed.at("accountId").get<std::string>();
+                sessionDetail.timezoneOffset = jsonResponseParsed.at("timezoneOffset").get<int>();
+                sessionDetail.locale = jsonResponseParsed.at("locale").get<std::string>();
+                sessionDetail.currency = jsonResponseParsed.at("currency").get<std::string>();
+                sessionDetail.streamEndpoint = jsonResponseParsed.at("streamEndpoint").get<std::string>();
+
+                return true;  // Return true on successful parsing
+            }
+            catch (const std::exception& e) {
+                std::cerr << "Error parsing JSON response: " << e.what() << std::endl;
+                return false;  // Return false if parsing fails
+            }
+        }
+    };
 
     // Implementations are included within the class definition
     static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* output) {
@@ -1140,8 +1191,7 @@ public:
                     }
                 }
             }
-            else {
-                std::cerr << "Prices not found in response." << std::endl;
+            else {               
                 return false;
             }
         }
@@ -1305,7 +1355,7 @@ public:
         }
     }
 
-    bool GetSessionInfo(std::string& currentaccountId)
+    bool GetSessionInfo(SessionDetail& sessiondetail)
     {
         std::string response;
         std::string headerData;
@@ -1324,17 +1374,8 @@ public:
             return false;
         }
 
-        nlohmann::json response_json = nlohmann::json::parse(response);
-
-        try
-        {
-            if (response_json.contains("accountId")) {
-                currentaccountId = response_json["accountId"].get<std::string>();
-            }
-        }
-        catch (const nlohmann::json::exception& e)
-        {
-            std::cerr << "JSON parsing error: " << e.what() << std::endl;
+        if (SessionDetail::ParseFromJson(response, sessiondetail)) {
+            return true;
         }
        
 
