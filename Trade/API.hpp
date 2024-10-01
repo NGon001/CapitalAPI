@@ -19,9 +19,10 @@ class API
 {
 public:
     std::string base_url = "https://demo-api-capital.backend-capital.com";
-    std::string order_url = base_url + "/api/v1/positions";
+    std::string positions_url = base_url + "/api/v1/positions/";
     std::string session_url = base_url + "/api/v1/session";
-    std::string price_url = base_url + "/api/v1/markets/";
+    std::string markets_url = base_url + "/api/v1/markets/";
+    std::string accounts_url = base_url + "/api/v1/accounts/";
     std::string securityToken;
     std::string cstToken;
     bool sessioncreated = false;
@@ -784,6 +785,101 @@ public:
             return true;
         }
 };
+
+    class Account {
+public:
+    class Balance {  // Nested Balance class
+    public:
+        double balance;
+        double deposit;
+        double profitLoss;
+        double available;
+
+        Balance(double bal, double dep, double pLoss, double avail)
+            : balance(bal), deposit(dep), profitLoss(pLoss), available(avail) {}
+    };
+
+public:
+    std::string accountId;
+    std::string accountName;
+    std::string status;
+    std::string accountType;
+    bool preferred;
+    Balance balance;  // Member of Account
+    std::string currency;
+    std::string symbol;
+
+    // Constructor to initialize all members including the nested Balance class
+    Account(const std::string& id, const std::string& name, const std::string& stat, const std::string& type, bool pref,
+        const Balance& bal, const std::string& curr, const std::string& sym)
+        : accountId(id), accountName(name), status(stat), accountType(type), preferred(pref),
+        balance(bal), currency(curr), symbol(sym) {}
+
+    // Static function to parse JSON response into a vector of Account objects
+    static bool ParseFromJson(const std::string& jsonResponse, std::vector<Account>& accountList) {
+        try {
+            // Parse the JSON response
+            nlohmann::json jsonResponseParsed = nlohmann::json::parse(jsonResponse);
+
+            if (!jsonResponseParsed.contains("accounts")) return false;  // Check for the presence of "accounts"
+            auto accounts = jsonResponseParsed["accounts"];
+
+            // Ensure the JSON response is an array
+            if (accounts.is_array()) {
+                // Clear the accountList vector
+                accountList.clear();
+                int failedCount = 0;  // To keep track of failures
+
+                // Iterate through the JSON array and populate Account objects
+                for (const auto& jsonItem : accounts) {
+                    try {
+                        // Extracting balance details from the JSON
+                        Balance bal(
+                            jsonItem["balance"]["balance"].get<double>(),
+                            jsonItem["balance"]["deposit"].get<double>(),
+                            jsonItem["balance"]["profitLoss"].get<double>(),
+                            jsonItem["balance"]["available"].get<double>()
+                        );
+
+                        // Creating an Account object
+                        Account account(
+                            jsonItem["accountId"].get<std::string>(),
+                            jsonItem["accountName"].get<std::string>(),
+                            jsonItem["status"].get<std::string>(),
+                            jsonItem["accountType"].get<std::string>(),
+                            jsonItem["preferred"].get<bool>(),
+                            bal,
+                            jsonItem["currency"].get<std::string>(),
+                            jsonItem["symbol"].get<std::string>()
+                        );
+
+                        // Add the account to the list
+                        accountList.push_back(account);
+                    }
+                    catch (const std::exception& e) {
+                        std::cerr << "Error parsing account item: " << e.what() << std::endl;
+                        failedCount++;
+                        continue;
+                    }
+                }
+
+                // Debugging information
+                std::cout << "Number of successfully parsed Account items: " << accountList.size() << std::endl;
+                std::cout << "Number of failed items: " << failedCount << std::endl;
+            }
+            else {
+                std::cerr << "Unexpected JSON format: 'accounts' is not an array." << std::endl;
+                return false;
+            }
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Error parsing JSON response: " << e.what() << std::endl;
+            return false;
+        }
+
+        return true;
+    }
+};
     
 
     // Implementations are included within the class definition
@@ -870,6 +966,10 @@ public:
         }
         else if (requestType == "DELETE") {
             curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+        }
+        else if (requestType == "PUT") {
+            curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postFields.c_str());
         }
         else {
             std::cerr << "Unsupported request type: " << requestType << std::endl;
@@ -964,7 +1064,7 @@ public:
         headers = curl_slist_append(headers, ("CST: " + cstToken).c_str());
         headers = curl_slist_append(headers, "Content-Type: application/json");
 
-        bool success = CurlReq(price_url + epic, "", headers, response,headerData, "GET");
+        bool success = CurlReq(markets_url + epic, "", headers, response,headerData, "GET");
 
         if (!success) {
             std::cerr << "Failed to perform curl request for price fetching." << std::endl;
@@ -1076,7 +1176,7 @@ public:
 
         std::string body = body_json.dump();
 
-        if (!CurlReq(order_url, body, headers, response,headerData, "POST")) {
+        if (!CurlReq(positions_url, body, headers, response,headerData, "POST")) {
             return false;
         }
 
@@ -1120,8 +1220,6 @@ public:
         headers = curl_slist_append(headers, ("CST: " + cstToken).c_str());
         headers = curl_slist_append(headers, "Content-Type: application/json");
 
-        std::string markets_url = "https://demo-api-capital.backend-capital.com/api/v1/markets";
-
         bool success = CurlReq(markets_url, "", headers, response, headerData, "GET");
 
         if (!success) {
@@ -1149,7 +1247,7 @@ public:
         headers = curl_slist_append(headers, ("CST: " + cstToken).c_str());
         headers = curl_slist_append(headers, "Content-Type: application/json");   
 
-        bool success = CurlReq(order_url, "", headers, response, headerData, "GET");
+        bool success = CurlReq(positions_url, "", headers, response, headerData, "GET");
 
         if (!success) {
             //std::cerr << "Failed to perform curl request for price fetching." << std::endl;
@@ -1174,9 +1272,7 @@ public:
         headers = curl_slist_append(headers, ("CST: " + cstToken).c_str());
         headers = curl_slist_append(headers, "Content-Type: application/json");
 
-        std::string singlemarketurl = "https://demo-api-capital.backend-capital.com/api/v1/markets/" + epic;
-
-        bool success = CurlReq(singlemarketurl, "", headers, response, headerData, "GET");
+        bool success = CurlReq(markets_url + epic, "", headers, response, headerData, "GET");
 
         if (!success) {
             //std::cerr << "Failed to perform curl request for price fetching." << std::endl;
@@ -1198,9 +1294,7 @@ public:
         headers = curl_slist_append(headers, ("CST: " + cstToken).c_str());
         headers = curl_slist_append(headers, "Content-Type: application/json");
 
-        std::string url = "https://demo-api-capital.backend-capital.com/api/v1/positions/" + dealid;
-
-        bool success = CurlReq(url, "", headers, response, headerData, "GET");
+        bool success = CurlReq(positions_url + dealid, "", headers, response, headerData, "GET");
 
         if (!success) {
             //std::cerr << "Failed to perform curl request for price fetching." << std::endl;
@@ -1209,5 +1303,111 @@ public:
         if (TradePosition::ParseFromJson(response, singleposition)) {
             return true;
         }
+    }
+
+    bool GetSessionInfo(std::string& currentaccountId)
+    {
+        std::string response;
+        std::string headerData;
+        struct curl_slist* headers = NULL;
+
+
+        headers = curl_slist_append(headers, ("X-SECURITY-TOKEN: " + securityToken).c_str());
+        headers = curl_slist_append(headers, ("CST: " + cstToken).c_str());
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+
+
+        bool success = CurlReq(session_url, "", headers, response, headerData, "GET");
+
+        if (!success) {
+            //std::cerr << "Failed to perform curl request for price fetching." << std::endl;
+            return false;
+        }
+
+        nlohmann::json response_json = nlohmann::json::parse(response);
+
+        try
+        {
+            if (response_json.contains("accountId")) {
+                currentaccountId = response_json["accountId"].get<std::string>();
+            }
+        }
+        catch (const nlohmann::json::exception& e)
+        {
+            std::cerr << "JSON parsing error: " << e.what() << std::endl;
+        }
+       
+
+        return success;
+    }
+
+    bool GetAllAccounts(std::vector<Account>& accouts)
+    {
+        std::string response;
+        std::string headerData;
+        struct curl_slist* headers = NULL;
+
+
+        headers = curl_slist_append(headers, ("X-SECURITY-TOKEN: " + securityToken).c_str());
+        headers = curl_slist_append(headers, ("CST: " + cstToken).c_str());
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+
+
+        bool success = CurlReq(accounts_url, "", headers, response, headerData, "GET");
+
+        if (!success) {
+            //std::cerr << "Failed to perform curl request for price fetching." << std::endl;
+            return false;
+        }
+
+        if (Account::ParseFromJson(response, accouts)) {
+            return true;
+        }
+
+        return success;
+    }
+
+    bool SwitchAccount(std::string accountId)
+    {
+        std::string response;
+        std::string headerData;
+        struct curl_slist* headers = NULL;
+
+
+        headers = curl_slist_append(headers, ("X-SECURITY-TOKEN: " + securityToken).c_str());
+        headers = curl_slist_append(headers, ("CST: " + cstToken).c_str());
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+
+        std::string requestBody = "{ \"accountId\": \"" + accountId + "\" }";
+
+        bool success = CurlReq(session_url, requestBody, headers, response, headerData, "PUT");
+
+        if (!success) {
+            //std::cerr << "Failed to perform curl request for price fetching." << std::endl;
+            return false;
+        }
+        securityToken.erase();
+        cstToken.erase();
+        size_t secTokenStart = headerData.find("X-SECURITY-TOKEN:") + 17;
+        size_t secTokenEnd = headerData.find("\r", secTokenStart);
+        if (secTokenStart != std::string::npos && secTokenEnd != std::string::npos) {
+            securityToken = headerData.substr(secTokenStart, secTokenEnd - secTokenStart);
+        }
+
+        size_t cstTokenStart = headerData.find("CST:") + 4;
+        size_t cstTokenEnd = headerData.find("\r", cstTokenStart);
+        if (cstTokenStart != std::string::npos && cstTokenEnd != std::string::npos) {
+            cstToken = headerData.substr(cstTokenStart, cstTokenEnd - cstTokenStart);
+        }
+        if (securityToken.empty()) {
+            std::cerr << "Security Token is missing or null." << std::endl;
+            return false;
+        }
+        if (cstToken.empty()) {
+            std::cerr << "CST Token is missing or null." << std::endl;
+            return false;
+        }
+        std::cout << ui.color_cyan << "Security Token: " << securityToken << std::endl;
+        std::cout << "CST Token: " << cstToken << ui.color_reset << std::endl;
     }
 };
