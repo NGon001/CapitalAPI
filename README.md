@@ -125,7 +125,7 @@ if (api.sessioncreated)
     for (auto market : allmarkets) // access all elements in this market array
     {
         API::SingleMarketDetail singlemarket;
-        api.GetSingleMarketInfo(singlemarket, "BTCUSD");
+        api.GetSingleMarketInfo(singlemarket, market.epic);
         std::cout <<"Epic: " << market.epic << "CurrentSell: " << singlemarket.snapshot.bid << " CurrentBuy: " << singlemarket.snapshot.offer << " minDealSizeOut: " << std::to_string(singlemarket.dealingRules.minDealSize.value) << std::endl;
     }
 }
