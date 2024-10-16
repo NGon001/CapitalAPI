@@ -1,5 +1,6 @@
 #include "Account.hpp"
 #include "UI.hpp"
+
 #pragma comment(lib, "wldap32.lib")
 #pragma comment(lib, "crypt32.lib")
 #pragma comment(lib, "Ws2_32.lib")
@@ -7,6 +8,10 @@
 #define CURL_STATICLIB
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
+#include <mutex>
+#include <fstream>  // This must be included for std::ofstream
+#include <ctime>    // For timestamp
+
 
 
 
@@ -23,10 +28,38 @@ public:
     std::string session_url = base_url + "/api/v1/session";
     std::string markets_url = base_url + "/api/v1/markets/";
     std::string accounts_url = base_url + "/api/v1/accounts/";
+    std::string price_url = base_url + "/api/v1/markets/";
+    std::string ping_url = base_url + "/api/v1/ping";
     std::string securityToken;
     std::string cstToken;
     bool sessioncreated = false;
     std::time_t sessioncreatetime;
+    /*
+    Levrage
+    currencies - 30:1
+    indices - 20:1
+    commodities 20:1
+    crypto 2:1
+    shares 5:1
+    */
+    // Static log function
+    static void LOG(const std::string& message) {
+        static std::ofstream logFile("log.txt", std::ios::app);  // Open log file in append mode
+
+        // Get current time
+        std::time_t currentTime = std::time(nullptr);
+        char timeStr[26];
+        ctime_s(timeStr, sizeof(timeStr), &currentTime);  // Use ctime_s for thread-safe, secure time
+
+        timeStr[24] = '\0';  // Remove newline character (ctime_s appends a newline at the end)
+
+        if (logFile.is_open()) {
+            logFile << "[" << timeStr << "] " << message << std::endl;
+        }
+        else {
+            std::cerr << "Failed to write log: " << message << std::endl;
+        }
+    }
 
     class TradePosition {
     public:
@@ -446,6 +479,7 @@ public:
             std::string currency;
             double marginFactor;
             std::string marginFactorUnit;
+            int leverage;
 
             struct OpeningHours {
                 std::vector<std::string> mon;
@@ -710,7 +744,16 @@ public:
                         // Create a SingleMarketDetail object and populate it
                         SingleMarketDetail marketDetail;
 
+                       
+                       // std::cout << "snapshot START" << std::endl;
                         marketDetail.snapshot.updateTime = snapshotData["updateTime"].get<std::string>();
+                       // std::cout << "snapshot updateTime " << snapshotData.contains("updateTime") << std::endl;
+                        marketDetail.snapshot.bid = snapshotData["bid"].get<double>();
+                        //std::cout << "snapshot bid " << snapshotData.contains("bid") << std::endl;
+                        marketDetail.snapshot.offer = snapshotData["offer"].get<double>();
+                        marketDetail.snapshot.marketStatus = snapshotData["marketStatus"].get<std::string>();
+                       // std::cout << "snapshot offer " << snapshotData.contains("offer") << std::endl;
+    
 
                         // Instrument data
                         marketDetail.instrument.epic = instrumentData["epic"].get<std::string>();
@@ -724,6 +767,20 @@ public:
                         marketDetail.instrument.currency = instrumentData["currency"].get<std::string>();
                         marketDetail.instrument.marginFactor = instrumentData["marginFactor"].get<double>();
                         marketDetail.instrument.marginFactorUnit = instrumentData["marginFactorUnit"].get<std::string>();
+
+
+                        if (marketDetail.instrument.type == "CRYPTOCURRENCIES")
+                            marketDetail.instrument.leverage = 2;
+                        if (marketDetail.instrument.type == "INDICES")
+                            marketDetail.instrument.leverage = 20;
+                        if (marketDetail.instrument.type == "SHARES")
+                            marketDetail.instrument.leverage = 5;
+                        if (marketDetail.instrument.type == "COMMODITIES")
+                            marketDetail.instrument.leverage = 20;
+                        if (marketDetail.instrument.type == "CURRENCIES")
+                            marketDetail.instrument.leverage = 30;
+
+
 
                         // Instrument opening hours
                         if (instrumentData.contains("openingHours")) {
@@ -744,6 +801,8 @@ public:
                         marketDetail.instrument.overnightFee.shortRate = overnightFeeData["shortRate"].get<double>();
                         marketDetail.instrument.overnightFee.swapChargeTimestamp = overnightFeeData["swapChargeTimestamp"].get<long long>();
                         marketDetail.instrument.overnightFee.swapChargeInterval = overnightFeeData["swapChargeInterval"].get<int>();
+
+                     //   std::cout << "Instrument" << std::endl;
 
                         // Dealing rules
                         marketDetail.dealingRules.minStepDistance.unit = dealingRulesData["minStepDistance"]["unit"].get<std::string>();
@@ -770,7 +829,7 @@ public:
                         marketDetail.dealingRules.marketOrderPreference = dealingRulesData["marketOrderPreference"].get<std::string>();
                         marketDetail.dealingRules.trailingStopsPreference = dealingRulesData["trailingStopsPreference"].get<std::string>();
 
-                        
+                      //  std::cout << "dealingRules" << std::endl;
 
                         // Add the marketDetail to the vector
                         marketDetails = marketDetail;
@@ -933,14 +992,107 @@ public:
         }
     };
 
+    class PriceHistoryData {
+    public:
+        std::string snapshotTime;
+        std::string snapshotTimeUTC;
+
+        struct PriceData {
+            double bid;
+            double ask;
+        };
+
+        PriceData openPrice;
+        PriceData closePrice;
+        PriceData highPrice;
+        PriceData lowPrice;
+
+        int lastTradedVolume;
+
+        PriceHistoryData() : lastTradedVolume(0) {};
+
+        static bool fromJson(const nlohmann::json& jsonItem, PriceHistoryData& price) {
+            try {
+                price.snapshotTime = jsonItem.at("snapshotTime").get<std::string>();
+                price.snapshotTimeUTC = jsonItem.at("snapshotTimeUTC").get<std::string>();
+
+                auto openPrice = jsonItem.at("openPrice");
+                price.openPrice.bid = openPrice.at("bid").get<double>();
+                price.openPrice.ask = openPrice.at("ask").get<double>();
+
+                auto closePrice = jsonItem.at("closePrice");
+                price.closePrice.bid = closePrice.at("bid").get<double>();
+                price.closePrice.ask = closePrice.at("ask").get<double>();
+
+                auto highPrice = jsonItem.at("highPrice");
+                price.highPrice.bid = highPrice.at("bid").get<double>();
+                price.highPrice.ask = highPrice.at("ask").get<double>();
+
+                auto lowPrice = jsonItem.at("lowPrice");
+                price.lowPrice.bid = lowPrice.at("bid").get<double>();
+                price.lowPrice.ask = lowPrice.at("ask").get<double>();
+
+                price.lastTradedVolume = jsonItem.at("lastTradedVolume").get<int>();
+
+                return true;
+            }
+            catch (const std::exception& e) {
+                std::cerr << "Error parsing price data: " << e.what() << std::endl;
+                return false;
+            }
+        }
+
+        static bool ParseFromJson(const std::string& jsonResponse, std::vector<PriceHistoryData>& priceList) {
+            try {
+                // Parse the JSON response
+                nlohmann::json jsonResponseParsed = nlohmann::json::parse(jsonResponse);
+
+                if (!jsonResponseParsed.contains("prices")) return false;
+                auto prices = jsonResponseParsed["prices"];
+
+                // Ensure the JSON response is an array
+                if (prices.is_array()) {
+                    // Clear the priceList vector
+                    priceList.clear();
+
+                    int failedCount = 0;  // To keep track of failures
+
+                    // Iterate through the JSON array and populate Price objects
+                    for (const auto& jsonItem : prices) {
+                        PriceHistoryData price;
+                        if (PriceHistoryData::fromJson(jsonItem, price)) {
+                            priceList.push_back(price);
+                        }
+                        else {
+                            failedCount++;
+                        }
+                    }
+
+                }
+                else {
+                    std::cerr << "Unexpected JSON format: 'prices' is not an array." << std::endl;
+                    return false;
+                }
+            }
+            catch (const std::exception& e) {
+                std::cerr << "Error parsing JSON response: " << e.what() << std::endl;
+                return false;
+            }
+
+            return true;
+        }
+    };
+
     // Implementations are included within the class definition
     static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* output) {
+        //LOG("WriteCallback");
         size_t total_size = size * nmemb;
         output->append(reinterpret_cast<char*>(contents), total_size);
         return total_size;
     }
 
     static size_t HeaderCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+        //LOG("HeaderCallback");
         std::string header((char*)contents, size * nmemb);
         std::string* headerData = static_cast<std::string*>(userp);
 
@@ -971,6 +1123,7 @@ public:
 
     bool CurlIn(CURL*& curl)
     {
+       // LOG("CurlIn");
         CURLcode res;
         curl_global_init(CURL_GLOBAL_DEFAULT);
         curl = curl_easy_init();
@@ -981,6 +1134,7 @@ public:
 
     bool CurlClean(CURL*& curl, struct curl_slist*& headers)
     {
+      //  LOG("CurlClean");
         // Cleanup
         curl_slist_free_all(headers);
         curl_easy_cleanup(curl);
@@ -989,7 +1143,11 @@ public:
     }
 
     bool CurlReq(const std::string& url ,const std::string& postFields, curl_slist* headers, std::string& response, std::string& headerData, const std::string& requestType) {
-
+        LOG("CurlReq called with parameters: "
+            "URL: " + url + ", "
+            "Post Fields: " + postFields + ", "
+            "Headers: " + (headers ? "Provided" : "None") + ", "
+            "Request Type: " + requestType);
         CURL* curl;
         if (!CurlIn(curl)) return 0;
 
@@ -1029,7 +1187,7 @@ public:
         }
 
         CURLcode res = curl_easy_perform(curl);
-
+        LOG("Curle finish cdoe is: " + std::to_string(res));
         if (res != CURLE_OK) {
             std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
             CurlClean(curl, headers);
@@ -1041,11 +1199,13 @@ public:
         //  std::cout << "HTTP Response Code: " << response_code << std::endl;
 
         CurlClean(curl, headers);
+        LOG("CURL END");
         return true;
     }
 
 
     bool CreateSession() {
+        LOG("CreateSession start");
         std::string response;
         std::string headerData;
 
@@ -1057,6 +1217,8 @@ public:
         std::string body = body_json.dump();
 
         bool success = CurlReq(session_url, body, headers, response, headerData, "POST");
+
+        LOG(response);
 
         if (!success) {
             std::cerr << "Failed to perform curl request for session creation." << std::endl;
@@ -1088,24 +1250,25 @@ public:
         }
         std::cout << ui.color_cyan << "Security Token: " << securityToken << std::endl;
         std::cout << "CST Token: " << cstToken << ui.color_reset << std::endl;
+        LOG("CST Token: " + cstToken  + " Security Token: " + securityToken);
         return true;
     }
 
     bool logoutSession() {
-        std::string url = "https://demo-api-capital.backend-capital.com/api/v1/session";
         std::string response, headerData;
 
         struct curl_slist* headers = nullptr;
         headers = curl_slist_append(headers, ("X-SECURITY-TOKEN: " + securityToken).c_str());
         headers = curl_slist_append(headers, ("CST: " + cstToken).c_str());
 
-        bool success = CurlReq(url, "", headers, response,headerData, "DELETE");
+        bool success = CurlReq(session_url, "", headers, response,headerData, "DELETE");
 
         return success;
     }
 
     // Fetch the current price of an asset
-    bool fetchPrice(double &CurrentSellPrice, double &CurrentBuyPrice,double& minDealSizeOut,std::string epic) {
+    bool GetSingleMarket(std::string epic, SingleMarketDetail& epicinfo) {
+        LOG("GetSingleMarket: " + epic);
         std::string response;
         std::string headerData;
         struct curl_slist* headers = NULL;
@@ -1115,8 +1278,36 @@ public:
         headers = curl_slist_append(headers, ("CST: " + cstToken).c_str());
         headers = curl_slist_append(headers, "Content-Type: application/json");
 
-        bool success = CurlReq(markets_url + epic, "", headers, response,headerData, "GET");
+        bool success = CurlReq(markets_url + epic, "", headers, response, headerData, "GET");
+        LOG(response);
+        if (!success) {
+            std::cerr << "Failed to perform curl request for price fetching." << std::endl;
+            return false;
+        }
 
+        // Debug: Print raw response and header data
+        //std::cout << "Price Fetch Response: " << response << std::endl;
+
+        if (SingleMarketDetail::ParseFromJson(response, epicinfo)) {
+            return true;
+        }
+        return true;
+    }
+
+    // Fetch the current price of an asset
+    bool GetSingleMarket(double& CurrentSellPrice, double& CurrentBuyPrice, double& minDealSizeOut, std::string epic) {
+        LOG("GetSingleMarket: " + epic);
+        std::string response;
+        std::string headerData;
+        struct curl_slist* headers = NULL;
+
+
+        headers = curl_slist_append(headers, ("X-SECURITY-TOKEN: " + securityToken).c_str());
+        headers = curl_slist_append(headers, ("CST: " + cstToken).c_str());
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+
+        bool success = CurlReq(price_url + epic, "", headers, response, headerData, "GET");
+        LOG(response);
         if (!success) {
             std::cerr << "Failed to perform curl request for price fetching." << std::endl;
             return false;
@@ -1157,8 +1348,13 @@ public:
         return true;
     }
 
-    bool fetchPriceHistory(std::string from, std::string to,std::string epic, std::vector<double>& pricehistory) {
-
+    bool fetchPriceHistory(std::string from, std::string to, std::string epic, std::string resolution, int max, std::vector<PriceHistoryData>& pricehistory) {
+        LOG("fetchPriceHistory called with parameters: "
+            "From: " + from + ", "
+            "To: " + to + ", "
+            "Epic: " + epic + ", "
+            "Resolution: " + resolution + ", "
+            "Max: " + std::to_string(max));
         std::string response;
         std::string headerData;
         struct curl_slist* headers = NULL;
@@ -1168,10 +1364,18 @@ public:
         headers = curl_slist_append(headers, ("CST: " + cstToken).c_str());
         headers = curl_slist_append(headers, "Content-Type: application/json");
 
-        std::string pricehistory_url = base_url + "/api/v1/prices/" + epic + "?resolution=MINUTE&max=1000&from=" + from + "&to=" + to;
+        std::string url;
+        if (from == "-1" || to == "-1")
+            url = base_url + "/api/v1/prices/" + epic + "?resolution=" + resolution + "&max=" + std::to_string(max);
+        else
+        {
+            url = base_url + "/api/v1/prices/" + epic + "?resolution=" + resolution + "&max=1000&from=" + from + "&to=" + to;
+        }
+        LOG(url);
 
-        bool success = CurlReq(pricehistory_url, "", headers, response,headerData, "GET");
+        bool success = CurlReq(url, "", headers, response, headerData, "GET");
 
+        LOG(response);
         if (!success) {
             //std::cerr << "Failed to perform curl request for price fetching." << std::endl;
             return false;
@@ -1180,33 +1384,20 @@ public:
         // Debug: Print raw response and header data
        // std::cout << "Price Fetch Response: " << response << std::endl;
 
-        try {
-            nlohmann::json response_json = nlohmann::json::parse(response);
 
-            if (response_json.contains("prices")) {
-                const auto& prices = response_json["prices"];
-                for (const auto& price : prices) {
-                    if (price.contains("closePrice") && price["closePrice"].contains("bid")) {
-                        pricehistory.push_back(price["closePrice"]["bid"].get<double>());
-                    }
-                }
-            }
-            else {               
-                return false;
-            }
+        if (PriceHistoryData::ParseFromJson(response, pricehistory)) {
+            return true;
         }
-        catch (const nlohmann::json::exception& e) {
-            std::cerr << "JSON parsing error: " << e.what() << std::endl;
-            return false;
-        }
-
 
 
         return true;
     }
 
-    bool Order(const std::string& direction, double size, std::string epic, std::string& dealReference) {
-
+    bool CreatePosition(const std::string& direction, double size, std::string epic) {
+        LOG("CreatePosition called with parameters: "
+            "Direction: " + direction + ", "
+            "Size: " + std::to_string(size) + ", "
+            "Epic: " + epic);
         std::string response, headerData;
         struct curl_slist* headers = nullptr;
 
@@ -1220,15 +1411,12 @@ public:
             {"size", size}
         };
 
-        if (!dealReference.empty()) {
-            body_json["dealReference"] = dealReference;
-        }
-
         std::string body = body_json.dump();
 
         if (!CurlReq(positions_url, body, headers, response,headerData, "POST")) {
             return false;
         }
+        LOG(response);
 
         try {
             json response_json = json::parse(response);
@@ -1240,9 +1428,8 @@ public:
                 if (direction == "BUY") {
                     std::cout << ui.color_green << "Buy order created successfully." << ui.color_reset << std::endl;
                     if (!response_json["dealReference"].is_null()) {
-                        dealReference = response_json["dealReference"].get<std::string>();
                     }
-                    std::cout << "Deal Reference: " << dealReference << std::endl;
+                    std::cout << "Deal Reference: " << response_json["dealReference"].get<std::string>() << std::endl;
                     return true;
                 }
                 else {
@@ -1261,6 +1448,7 @@ public:
 
     bool GetEpics(std::vector<MarketData>& markets)
     {
+        LOG("GetEpics");
         std::string response;
         std::string headerData;
         struct curl_slist* headers = NULL;
@@ -1271,7 +1459,7 @@ public:
         headers = curl_slist_append(headers, "Content-Type: application/json");
 
         bool success = CurlReq(markets_url, "", headers, response, headerData, "GET");
-
+        LOG(response);
         if (!success) {
             //std::cerr << "Failed to perform curl request for price fetching." << std::endl;
             return false;
@@ -1288,6 +1476,7 @@ public:
 
     bool GetAllActivePositions(std::vector<TradePosition>& openpositions)
     {
+        LOG("GetAllActivePositions");
         std::string response;
         std::string headerData;
         struct curl_slist* headers = NULL;
@@ -1298,7 +1487,7 @@ public:
         headers = curl_slist_append(headers, "Content-Type: application/json");   
 
         bool success = CurlReq(positions_url, "", headers, response, headerData, "GET");
-
+        LOG(response);
         if (!success) {
             //std::cerr << "Failed to perform curl request for price fetching." << std::endl;
             return false;
@@ -1313,6 +1502,7 @@ public:
 
     bool GetSingleMarketInfo(SingleMarketDetail& singlemarkets,std::string epic)
     {
+        LOG("GetSingleMarketInfo: " + epic);
         std::string response;
         std::string headerData;
         struct curl_slist* headers = NULL;
@@ -1323,7 +1513,7 @@ public:
         headers = curl_slist_append(headers, "Content-Type: application/json");
 
         bool success = CurlReq(markets_url + epic, "", headers, response, headerData, "GET");
-
+        LOG(response);
         if (!success) {
             //std::cerr << "Failed to perform curl request for price fetching." << std::endl;
             return false;
@@ -1335,6 +1525,7 @@ public:
 
     bool GetSinglePosition(TradePosition& singleposition,std::string dealid)
     {
+        LOG("GetSinglePosition: " + dealid);
         std::string response;
         std::string headerData;
         struct curl_slist* headers = NULL;
@@ -1345,7 +1536,7 @@ public:
         headers = curl_slist_append(headers, "Content-Type: application/json");
 
         bool success = CurlReq(positions_url + dealid, "", headers, response, headerData, "GET");
-
+        LOG(response);
         if (!success) {
             //std::cerr << "Failed to perform curl request for price fetching." << std::endl;
             return false;
@@ -1357,6 +1548,7 @@ public:
 
     bool GetSessionInfo(SessionDetail& sessiondetail)
     {
+        LOG("GetSessionInfo");
         std::string response;
         std::string headerData;
         struct curl_slist* headers = NULL;
@@ -1368,7 +1560,7 @@ public:
 
 
         bool success = CurlReq(session_url, "", headers, response, headerData, "GET");
-
+        LOG(response);
         if (!success) {
             //std::cerr << "Failed to perform curl request for price fetching." << std::endl;
             return false;
@@ -1384,6 +1576,7 @@ public:
 
     bool GetAllAccounts(std::vector<Account>& accouts)
     {
+        LOG("GetAllAccounts");
         std::string response;
         std::string headerData;
         struct curl_slist* headers = NULL;
@@ -1395,7 +1588,7 @@ public:
 
 
         bool success = CurlReq(accounts_url, "", headers, response, headerData, "GET");
-
+        LOG(response);
         if (!success) {
             //std::cerr << "Failed to perform curl request for price fetching." << std::endl;
             return false;
@@ -1410,6 +1603,7 @@ public:
 
     bool SwitchAccount(std::string accountId)
     {
+        LOG("SwitchAccount: " + accountId);
         std::string response;
         std::string headerData;
         struct curl_slist* headers = NULL;
@@ -1422,7 +1616,7 @@ public:
         std::string requestBody = "{ \"accountId\": \"" + accountId + "\" }";
 
         bool success = CurlReq(session_url, requestBody, headers, response, headerData, "PUT");
-
+        LOG(response);
         if (!success) {
             //std::cerr << "Failed to perform curl request for price fetching." << std::endl;
             return false;
@@ -1451,4 +1645,106 @@ public:
         std::cout << ui.color_cyan << "Security Token: " << securityToken << std::endl;
         std::cout << "CST Token: " << cstToken << ui.color_reset << std::endl;
     }
+    bool PingSession()
+    {
+        LOG("PingSession");
+        std::string response;
+        std::string headerData;
+        struct curl_slist* headers = NULL;
+
+
+        headers = curl_slist_append(headers, ("X-SECURITY-TOKEN: " + securityToken).c_str());
+        headers = curl_slist_append(headers, ("CST: " + cstToken).c_str());
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+
+        bool success = CurlReq(ping_url, "", headers, response, headerData, "GET");
+        LOG(response);
+        if (!success) {
+            std::cerr << "Failed to perform curl request for session creation." << std::endl;
+            return false;
+        }
+
+        size_t secTokenStart = headerData.find("X-SECURITY-TOKEN:") + 17;
+        size_t secTokenEnd = headerData.find("\r", secTokenStart);
+        if (secTokenStart != std::string::npos && secTokenEnd != std::string::npos) {
+            securityToken = headerData.substr(secTokenStart, secTokenEnd - secTokenStart);
+        }
+
+        size_t cstTokenStart = headerData.find("CST:") + 4;
+        size_t cstTokenEnd = headerData.find("\r", cstTokenStart);
+        if (cstTokenStart != std::string::npos && cstTokenEnd != std::string::npos) {
+            cstToken = headerData.substr(cstTokenStart, cstTokenEnd - cstTokenStart);
+        }
+
+        securityToken.erase(std::remove_if(securityToken.begin(), securityToken.end(), [](unsigned char c) { return std::isspace(c); }), securityToken.end());
+        cstToken.erase(std::remove_if(cstToken.begin(), cstToken.end(), [](unsigned char c) { return std::isspace(c); }), cstToken.end());
+
+        if (securityToken.empty()) {
+            std::cerr << "Security Token is missing or null." << std::endl;
+            return false;
+        }
+        if (cstToken.empty()) {
+            std::cerr << "CST Token is missing or null." << std::endl;
+            return false;
+        }
+        std::cout << ui.color_cyan << "Security Token: " << securityToken << std::endl;
+        std::cout << "CST Token: " << cstToken << ui.color_reset << std::endl;
+        return true;
+    }
+
+    bool ClosePosition(std::string dealId)
+    {
+        LOG("ClosePosition: " + dealId);
+        std::string response;
+        std::string headerData;
+        struct curl_slist* headers = NULL;
+
+
+        headers = curl_slist_append(headers, ("X-SECURITY-TOKEN: " + securityToken).c_str());
+        headers = curl_slist_append(headers, ("CST: " + cstToken).c_str());
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+
+        bool status = CurlReq(positions_url + dealId, "", headers, response, headerData, "DELETE");
+
+        LOG(response);
+        return status;
+    }
+
+
+    bool updatePosition(std::string dealId, bool guaranteedStop, bool trailingStop, int stopDistance, int profitDistance)
+    {
+        LOG("updatePosition");
+
+        /*
+        
+        NOT WORKING / IT IS BUT CAPITAL GAY SO DONT USE IT
+        stoplose cant go profit and somethimes error when trying to create it in capital, api sucsess full
+            
+        */
+
+        std::string response;
+        std::string headerData;
+        struct curl_slist* headers = NULL;
+
+
+        headers = curl_slist_append(headers, ("X-SECURITY-TOKEN: " + securityToken).c_str());
+        headers = curl_slist_append(headers, ("CST: " + cstToken).c_str());
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+
+        
+        std::string requestBody = "{ "
+            "\"guaranteedStop\": " + std::string(guaranteedStop ? "true" : "false") + ", "
+            "\"trailingStop\": " + std::string(trailingStop ? "true" : "false") + ", "
+            "\"stopDistance\": " + std::to_string(stopDistance) + ", "
+            "\"profitDistance\": " + std::to_string(profitDistance) +
+            "}";
+
+
+        bool result = CurlReq(positions_url + dealId, requestBody, headers, response, headerData, "PUT");
+        LOG(response);
+        return result;
+    }
+
+
+    
 };

@@ -1,5 +1,6 @@
 #include "API.hpp"
 #include "Tools.hpp"
+#include "ta_libc.h"
 API api;
 Tool tools;
 
@@ -20,14 +21,26 @@ void Example()
             api.sessioncreatetime = currenttime_t;
             api.sessioncreated = true;
         }
-
         auto differencetime = tools.CalculateTimeDifference(currenttime_t, api.sessioncreatetime);
-        if (differencetime >= 300) { // timer for session recreation
-            if (!api.logoutSession()) {
+        if (differencetime >= 300) {
+            if (!api.PingSession()) {
                 std::cerr << "Session logout failed. Exiting." << std::endl;
+                API::LOG("Session logout failed. Exiting.");
                 return;
             }
-            api.sessioncreated = false;
+            api.sessioncreatetime = currenttime_t;
+            API::LOG("Session pinged successfully.");
+        }
+
+        if (!api.sessioncreated) {
+            if (!api.CreateSession()) {
+                std::cerr << "Session creation failed. Exiting." << std::endl;
+                API::LOG("Session creation failed. Exiting.");
+                return;
+            }
+            api.sessioncreatetime = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            api.sessioncreated = true;
+            API::LOG("Session created successfully.");
         }
         //END
         if (api.sessioncreated)
@@ -36,13 +49,9 @@ void Example()
             api.GetEpics(allmarkets); // get all avalible markets
             for (auto market : allmarkets) // access all elements in this market array
             {
-                //code here
-                double CurrentSell = 0;
-                double CurrentBuy = 0;
-                double minDealSizeOut = 0;
-                api.fetchPrice(CurrentSell, CurrentBuy, minDealSizeOut, market.epic); // get current buy, sell pricess and minimum size for buy
-                std::cout <<"Epic: " << market.epic << "CurrentSell: " << CurrentSell << " CurrentBuy: " << CurrentBuy << " minDealSizeOut: " << minDealSizeOut << std::endl;
-
+                API::SingleMarketDetail singlemarket;
+                api.GetSingleMarketInfo(singlemarket, "BTCUSD");
+                std::cout <<"Epic: " << market.epic << "CurrentSell: " << singlemarket.snapshot.bid << " CurrentBuy: " << singlemarket.snapshot.offer << " minDealSizeOut: " << std::to_string(singlemarket.dealingRules.minDealSize.value) << std::endl;
             }
         }
         std::this_thread::sleep_for(std::chrono::seconds(3));

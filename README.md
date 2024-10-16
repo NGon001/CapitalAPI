@@ -22,23 +22,24 @@ api.CreateSession()
 But for long time program you need to make sure you updating your session:
 
 ```c++
-if (!api.sessioncreated) {
-    if (!api.CreateSession()) {
-        std::cerr << "Session creation failed. Exiting." << std::endl;
-        return;
-    }
-    api.sessioncreatetime = currenttime_t;
-    api.sessioncreated = true;
-}
-
-auto differencetime = tools.CalculateTimeDifference(currenttime_t, api.sessioncreatetime);
-if (differencetime >= 300) { // timer for session recreation
-    if (!api.logoutSession()) {
-        std::cerr << "Session logout failed. Exiting." << std::endl;
-        return;
-    }
-    api.sessioncreated = false;
-}
+        if (!api.sessioncreated) {
+            if (!api.CreateSession()) {
+                std::cerr << "Session creation failed. Exiting." << std::endl;
+                return;
+            }
+            api.sessioncreatetime = currenttime_t;
+            api.sessioncreated = true;
+        }
+        auto differencetime = tools.CalculateTimeDifference(currenttime_t, api.sessioncreatetime);
+        if (differencetime >= 300) {
+            if (!api.PingSession()) {
+                std::cerr << "Session logout failed. Exiting." << std::endl;
+                API::LOG("Session logout failed. Exiting.");
+                return;
+            }
+            api.sessioncreatetime = currenttime_t;
+            API::LOG("Session pinged successfully.");
+        }
 
 if (api.sessioncreated)
 {
