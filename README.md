@@ -124,13 +124,9 @@ if (api.sessioncreated)
     api.GetEpics(allmarkets); // get all avalible markets
     for (auto market : allmarkets) // access all elements in this market array
     {
-        //code here
-        double CurrentSell = 0;
-        double CurrentBuy = 0;
-        double minDealSizeOut = 0;
-        api.fetchPrice(CurrentSell, CurrentBuy, minDealSizeOut, market.epic); // get current buy, sell pricess and minimum size for buy
-        std::cout <<"Epic: " << market.epic << " CurrentSell: " << CurrentSell << " CurrentBuy: " << CurrentBuy << " minDealSizeOut: " << minDealSizeOut << std::endl;
-
+        API::SingleMarketDetail singlemarket;
+        api.GetSingleMarketInfo(singlemarket, "BTCUSD");
+        std::cout <<"Epic: " << market.epic << "CurrentSell: " << singlemarket.snapshot.bid << " CurrentBuy: " << singlemarket.snapshot.offer << " minDealSizeOut: " << std::to_string(singlemarket.dealingRules.minDealSize.value) << std::endl;
     }
 }
 ```
